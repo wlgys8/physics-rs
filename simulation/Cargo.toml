@@ -1,0 +1,11 @@
+[package]
+name = "simulation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "simulation"
+path = "src/lib.rs"
+
+[dependencies]
+nalgebra = { workspace = true }

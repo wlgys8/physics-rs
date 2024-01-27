@@ -1,0 +1,9 @@
+[package]
+name = "visual-examples"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+three-d = { version = "*", features = ["egui-gui"] }
+fast-mass-spring = { path = "../fast_mass_spring" }
+simulation = { path = "../simulation" }

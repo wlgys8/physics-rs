@@ -1,0 +1,7 @@
+[workspace]
+members = ["simulation", "fast_mass_spring", "visual-examples"]
+resolver = "2"
+
+
+[workspace.dependencies]
+nalgebra = "0.32"
