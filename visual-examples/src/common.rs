@@ -42,12 +42,16 @@ impl Default for PhysicsOptions {
 #[derive(Debug, Clone, Copy)]
 pub struct ClothOptions {
     pub spring_stiffness: f32,
+    pub mass: f32,
+    pub resolution: usize,
 }
 
 impl Default for ClothOptions {
     fn default() -> Self {
         Self {
-            spring_stiffness: 1.0,
+            spring_stiffness: 10.0,
+            mass: 1.0,
+            resolution: 20,
         }
     }
 }

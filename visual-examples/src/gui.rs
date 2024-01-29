@@ -31,17 +31,28 @@ impl PhysicsOptionsGUI {
     }
 }
 
-#[derive(Default)]
-pub(crate) struct ClothOptionsGUI {
-    pub data: ClothOptions,
+pub(crate) struct ClothOptionsGUI<'a> {
+    pub data: &'a mut ClothOptions,
 }
 
-impl ClothOptionsGUI {
+impl<'a> ClothOptionsGUI<'a> {
+    pub fn new(data: &'a mut ClothOptions) -> Self {
+        Self { data }
+    }
+
     pub fn show_ui(&mut self, ui: &mut three_d::egui::Ui) {
         use three_d::egui::*;
         CollapsingHeader::new("Cloth Options").show(ui, |ui| {
-            Slider::new(&mut self.data.spring_stiffness, 0.01..=10.0)
+            Slider::new(&mut self.data.spring_stiffness, 0.1..=100.0)
                 .text("Spring Stiffness")
+                .clamp_to_range(true)
+                .ui(ui);
+            Slider::new(&mut self.data.mass, 0.01..=100.0)
+                .text("mass")
+                .clamp_to_range(true)
+                .ui(ui);
+            Slider::new(&mut self.data.resolution, 2..=30)
+                .text("Resolution")
                 .clamp_to_range(true)
                 .ui(ui);
         });

@@ -4,7 +4,7 @@ use fast_mass_spring::{
     cloth::{Cloth, ClothFromMeshBuilder},
     solver::FastMassSpringSolver,
 };
-use simulation::{math::Isometry3, FixedFrameGenerator, GridPlaneBuilder, SphereCollider};
+use simulation::{math::Isometry3, FixedFrames, GridPlaneBuilder, SphereCollider};
 use three_d::{
     AmbientLight, Camera, CpuMaterial, CpuMesh, DirectionalLight, FrameInput, Gm, PhysicalMaterial,
     Srgba,
@@ -19,7 +19,7 @@ use crate::{
 pub struct DropClothScene {
     solver: FastMassSpringSolver,
     cloth_render: ClothRender,
-    fixed_frame_generator: FixedFrameGenerator,
+    fixed_frames: FixedFrames,
     sphere_render: Gm<three_d::Mesh, PhysicalMaterial>,
     lights: Lights,
 }
@@ -43,12 +43,12 @@ impl DropClothScene {
             simulation::math::Isometry3::identity(),
         );
 
-        let fixed_frame_generator = FixedFrameGenerator::new(physics_options.time_step);
+        let fixed_frame_generator = FixedFrames::new(physics_options.time_step);
 
         Self {
             solver,
             cloth_render: render,
-            fixed_frame_generator,
+            fixed_frames: fixed_frame_generator,
             sphere_render: create_sphere_render(context),
             lights: Lights::new(context),
         }
@@ -57,15 +57,12 @@ impl DropClothScene {
     pub fn on_frame_loop(&mut self, camera: &Camera, frame_input: &FrameInput) -> DemoLoopResult {
         let mut step_count = 0;
         let time = Instant::now();
-        while self
-            .fixed_frame_generator
-            .next((frame_input.accumulated_time / 1000.0) as f32)
+        for _ in self
+            .fixed_frames
+            .iter((frame_input.accumulated_time / 1000.0) as f32, 1)
         {
             self.solver.step();
             step_count += 1;
-            if step_count >= 5 {
-                break;
-            }
         }
 
         let result = if step_count > 0 {
@@ -90,23 +87,20 @@ impl DropClothScene {
     }
 }
 
+#[derive(Default)]
 pub struct DropClothDemo {
     scene: Option<DropClothScene>,
-    cloth_options: ClothOptionsGUI,
+    cloth_options: ClothOptions,
 }
 
-impl Default for DropClothDemo {
-    fn default() -> Self {
-        Self {
-            scene: None,
-            cloth_options: ClothOptionsGUI {
-                data: ClothOptions {
-                    spring_stiffness: 0.5,
-                },
-            },
-        }
-    }
-}
+// impl Default for DropClothDemo {
+//     fn default() -> Self {
+//         Self {
+//             scene: None,
+//             cloth_options: ClothOptions::default(),
+//         }
+//     }
+// }
 
 impl Demo for DropClothDemo {
     fn name(&self) -> &'static str {
@@ -117,7 +111,7 @@ impl Demo for DropClothDemo {
         self.scene = Some(DropClothScene::new(
             context,
             physics_options,
-            self.cloth_options.data,
+            self.cloth_options,
         ));
     }
 
@@ -130,24 +124,26 @@ impl Demo for DropClothDemo {
     }
 
     fn show_options_gui(&mut self, ui: &mut three_d::egui::Ui) {
-        self.cloth_options.show_ui(ui);
+        ClothOptionsGUI::new(&mut self.cloth_options).show_ui(ui)
     }
 }
 
 fn create_cloth(options: ClothOptions) -> (Cloth, simulation::Mesh) {
-    let grid_builder = GridPlaneBuilder::new(4.0, 4.0, 18, 18).with_transform(Isometry3 {
-        rotation: simulation::math::UnitQuaternion::from_axis_angle(
-            &simulation::math::Vector3::x_axis(),
-            std::f32::consts::PI / 2.0,
-        ),
-        translation: simulation::math::Vector3::new(0.0, 1.2, 0.0).into(),
-    });
+    let resolution = options.resolution;
+    let grid_builder =
+        GridPlaneBuilder::new(4.0, 4.0, resolution, resolution).with_transform(Isometry3 {
+            rotation: simulation::math::UnitQuaternion::from_axis_angle(
+                &simulation::math::Vector3::x_axis(),
+                std::f32::consts::PI / 2.0,
+            ),
+            translation: simulation::math::Vector3::new(0.0, 1.2, 0.0).into(),
+        });
 
     let mesh = grid_builder.build();
 
     let cloth = ClothFromMeshBuilder {
         mesh: &mesh,
-        mass: 0.01,
+        mass: options.mass,
         spring_stiffness: options.spring_stiffness,
     }
     .build();
