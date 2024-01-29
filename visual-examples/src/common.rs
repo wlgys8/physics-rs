@@ -3,7 +3,7 @@ use three_d::{Camera, FrameInput};
 
 pub trait Demo {
     fn name(&self) -> &'static str;
-    fn restart(&mut self, context: &three_d::Context, physics_options: PhysicsOptions);
+    fn restart(&mut self, context: &three_d::Context);
     fn on_frame_loop(&mut self, camera: &Camera, frame_input: &FrameInput) -> DemoLoopResult;
     fn show_options_gui(&mut self, ui: &mut three_d::egui::Ui);
 }
@@ -23,13 +23,13 @@ impl DemoLoopResult {
 }
 
 #[derive(Clone, Copy)]
-pub struct PhysicsOptions {
+pub struct SolverOptions {
     pub time_step: f32,
     pub gravity: Vector3,
     pub num_iterations: usize,
 }
 
-impl Default for PhysicsOptions {
+impl Default for SolverOptions {
     fn default() -> Self {
         Self {
             time_step: 1.0 / 60.0,
@@ -41,7 +41,8 @@ impl Default for PhysicsOptions {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ClothOptions {
-    pub spring_stiffness: f32,
+    pub structual_spring_stiffness: f32,
+    pub shear_spring_stiffness: f32,
     pub mass: f32,
     pub resolution: usize,
 }
@@ -49,7 +50,8 @@ pub struct ClothOptions {
 impl Default for ClothOptions {
     fn default() -> Self {
         Self {
-            spring_stiffness: 10.0,
+            structual_spring_stiffness: 10.0,
+            shear_spring_stiffness: 0.6,
             mass: 1.0,
             resolution: 20,
         }

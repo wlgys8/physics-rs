@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use fast_mass_spring::{
-    cloth::{Cloth, ClothFromMeshBuilder},
+    cloth::{Cloth, ClothBuilder},
     solver::FastMassSpringSolver,
 };
 use simulation::{math::Isometry3, FixedFrames, GridPlaneBuilder, SphereCollider};
@@ -11,8 +11,8 @@ use three_d::{
 };
 
 use crate::{
-    common::{ClothOptions, Demo, DemoLoopResult, PhysicsOptions},
-    gui::ClothOptionsGUI,
+    common::{ClothOptions, Demo, DemoLoopResult, SolverOptions},
+    gui::{ClothOptionsGUI, SolverOptionsGUI},
     render::ClothRender,
 };
 
@@ -25,25 +25,22 @@ pub struct DropClothScene {
 }
 
 impl DropClothScene {
-    pub fn new(
-        context: &three_d::Context,
-        physics_options: PhysicsOptions,
-        cloth_options: ClothOptions,
-    ) -> Self {
+    fn new(context: &three_d::Context, scene_options: SceneOptions) -> Self {
+        let solver_options = scene_options.solver_options;
         let mut render = ClothRender::new(context);
-        let (cloth, mesh) = create_cloth(cloth_options);
+        let (cloth, mesh) = create_cloth(scene_options.cloth_options);
         render.set_indices(mesh.indices());
 
         let mut solver: FastMassSpringSolver =
-            FastMassSpringSolver::new(cloth, physics_options.time_step);
-        solver.set_num_iterations(physics_options.num_iterations);
-        solver.set_gravity(physics_options.gravity);
+            FastMassSpringSolver::new(cloth, solver_options.time_step);
+        solver.set_num_iterations(solver_options.num_iterations);
+        solver.set_gravity(solver_options.gravity);
         solver.add_collider(
             SphereCollider { radius: 1.0 },
             simulation::math::Isometry3::identity(),
         );
 
-        let fixed_frame_generator = FixedFrames::new(physics_options.time_step);
+        let fixed_frame_generator = FixedFrames::new(solver_options.time_step);
 
         Self {
             solver,
@@ -90,29 +87,16 @@ impl DropClothScene {
 #[derive(Default)]
 pub struct DropClothDemo {
     scene: Option<DropClothScene>,
-    cloth_options: ClothOptions,
+    scene_options: SceneOptions,
 }
-
-// impl Default for DropClothDemo {
-//     fn default() -> Self {
-//         Self {
-//             scene: None,
-//             cloth_options: ClothOptions::default(),
-//         }
-//     }
-// }
 
 impl Demo for DropClothDemo {
     fn name(&self) -> &'static str {
         "Drop Cloth"
     }
 
-    fn restart(&mut self, context: &three_d::Context, physics_options: PhysicsOptions) {
-        self.scene = Some(DropClothScene::new(
-            context,
-            physics_options,
-            self.cloth_options,
-        ));
+    fn restart(&mut self, context: &three_d::Context) {
+        self.scene = Some(DropClothScene::new(context, self.scene_options));
     }
 
     fn on_frame_loop(&mut self, camera: &Camera, frame_input: &FrameInput) -> DemoLoopResult {
@@ -124,31 +108,37 @@ impl Demo for DropClothDemo {
     }
 
     fn show_options_gui(&mut self, ui: &mut three_d::egui::Ui) {
-        ClothOptionsGUI::new(&mut self.cloth_options).show_ui(ui)
+        SolverOptionsGUI::new(&mut self.scene_options.solver_options).show_ui(ui);
+        ClothOptionsGUI::new(&mut self.scene_options.cloth_options).show_ui(ui)
     }
 }
 
 fn create_cloth(options: ClothOptions) -> (Cloth, simulation::Mesh) {
     let resolution = options.resolution;
-    let grid_builder =
-        GridPlaneBuilder::new(4.0, 4.0, resolution, resolution).with_transform(Isometry3 {
-            rotation: simulation::math::UnitQuaternion::from_axis_angle(
-                &simulation::math::Vector3::x_axis(),
-                std::f32::consts::PI / 2.0,
-            ),
-            translation: simulation::math::Vector3::new(0.0, 1.2, 0.0).into(),
-        });
+    let cloth_size = 4.0;
+    let transform = Isometry3 {
+        rotation: simulation::math::UnitQuaternion::from_axis_angle(
+            &simulation::math::Vector3::x_axis(),
+            std::f32::consts::PI / 2.0,
+        ),
+        translation: simulation::math::Vector3::new(0.0, 1.2, 0.0).into(),
+    };
+    let render_mesh_data =
+        GridPlaneBuilder::new(cloth_size, cloth_size, resolution - 1, resolution - 1)
+            .with_transform(transform)
+            .build();
 
-    let mesh = grid_builder.build();
-
-    let cloth = ClothFromMeshBuilder {
-        mesh: &mesh,
+    let physics_cloth = ClothBuilder {
+        size: cloth_size,
+        resolution,
+        structural_spring_stiffness: options.structual_spring_stiffness,
+        shear_spring_stiffness: options.shear_spring_stiffness,
         mass: options.mass,
-        spring_stiffness: options.spring_stiffness,
+        transform,
     }
     .build();
 
-    (cloth, mesh)
+    (physics_cloth, render_mesh_data)
 }
 
 fn create_sphere_render(context: &three_d::Context) -> Gm<three_d::Mesh, PhysicalMaterial> {
@@ -166,6 +156,28 @@ fn create_sphere_render(context: &three_d::Context) -> Gm<three_d::Mesh, Physica
             },
         ),
     )
+}
+
+#[derive(Clone, Copy)]
+struct SceneOptions {
+    solver_options: SolverOptions,
+    cloth_options: ClothOptions,
+}
+
+impl Default for SceneOptions {
+    fn default() -> Self {
+        Self {
+            solver_options: SolverOptions {
+                time_step: 1.0 / 120.0,
+                ..Default::default()
+            },
+            cloth_options: ClothOptions {
+                structual_spring_stiffness: 80.0,
+                shear_spring_stiffness: 0.2,
+                ..Default::default()
+            },
+        }
+    }
 }
 
 struct Lights {

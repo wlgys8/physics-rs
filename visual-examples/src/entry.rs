@@ -6,7 +6,7 @@ use std::{collections::VecDeque, time::Duration};
 use simulation::FPSCounter;
 use three_d::{Camera, FrameInput};
 
-use crate::{common::Demo, gui::PhysicsOptionsGUI};
+use crate::common::Demo;
 
 use self::{drop_cloth_demo::DropClothDemo, hang_cloth_demo::HangClothDemo};
 
@@ -15,7 +15,6 @@ pub struct DemoEntry {
     demos: Vec<Box<dyn Demo>>,
     selected_demo_index: Option<usize>,
     fps_counter: FPSCounter,
-    physics_options_gui: PhysicsOptionsGUI,
     stats: Stats,
 }
 
@@ -27,7 +26,6 @@ impl DemoEntry {
             demos: vec![],
             selected_demo_index: None,
             fps_counter: FPSCounter::default(),
-            physics_options_gui: PhysicsOptionsGUI::default(),
             stats: Stats::default(),
         };
         slf.add_demo(HangClothDemo::default());
@@ -76,11 +74,10 @@ impl DemoEntry {
                                     demo.name(),
                                 );
                                 if r.changed() && Some(index) == self.selected_demo_index {
-                                    demo.restart(context, self.physics_options_gui.options());
+                                    demo.restart(context);
                                 }
                             }
                         });
-                    self.physics_options_gui.show_ui(ui);
 
                     if let Some(index) = self.selected_demo_index {
                         self.demos[index].show_options_gui(ui);
@@ -88,7 +85,7 @@ impl DemoEntry {
 
                     if ui.button("restart").clicked() {
                         if let Some(index) = self.selected_demo_index {
-                            self.demos[index].restart(context, self.physics_options_gui.options());
+                            self.demos[index].restart(context);
                         }
                     }
                 });

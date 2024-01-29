@@ -1,4 +1,5 @@
-use simulation::Mesh;
+use nalgebra::Point3;
+use simulation::{math::Isometry3, Mesh};
 
 use crate::math::{DVector, Number, Vector3};
 
@@ -44,6 +45,13 @@ impl Cloth {
     #[inline]
     pub fn num_constraints(&self) -> usize {
         self.num_springs() + self.attachments.len()
+    }
+
+    pub fn get_particle_position(&self, index: usize) -> Vector3 {
+        let x = self.particle_positions[index * 3];
+        let y = self.particle_positions[index * 3 + 1];
+        let z = self.particle_positions[index * 3 + 2];
+        Vector3::new(x, y, z)
     }
 }
 
@@ -98,5 +106,116 @@ impl<'a> ClothFromMeshBuilder<'a> {
             springs,
             attachments: vec![],
         }
+    }
+}
+
+/// Build a cloth that modeled as a grid plane. The order of the vertices is from -y to y, from -x to x.
+pub struct ClothBuilder {
+    pub size: Number,
+    pub resolution: usize,
+    pub structural_spring_stiffness: f32,
+    pub shear_spring_stiffness: f32,
+    pub mass: Number,
+    pub transform: Isometry3,
+}
+
+impl ClothBuilder {
+    pub fn build(self) -> Cloth {
+        let resolution = self.resolution;
+        let num_vertices = resolution * resolution;
+        let mut vertices = Vec::with_capacity(num_vertices * 3);
+        let cell_size = self.size / ((resolution as Number) - 1.0);
+        for i in 0..resolution {
+            for j in 0..resolution {
+                let local_point = Point3::new(
+                    -0.5 * self.size + i as Number * cell_size,
+                    -0.5 * self.size + j as Number * cell_size,
+                    0.0,
+                );
+                let point = self.transform * local_point;
+                vertices.extend([point.x, point.y, point.z]);
+            }
+        }
+        let particle_mass = self.mass / num_vertices as Number;
+
+        let rest_length = |i: usize, j: usize| {
+            let p0 = Vector3::from_column_slice(&vertices[i * 3..i * 3 + 3]);
+            let p1 = Vector3::from_column_slice(&vertices[j * 3..j * 3 + 3]);
+            (p0 - p1).magnitude()
+        };
+
+        //generate structural springs
+        let mut springs = vec![];
+        for i in 0..resolution {
+            for j in 0..resolution {
+                let index = i * resolution + j;
+                if i + 1 < resolution {
+                    let index1 = (i + 1) * resolution + j;
+                    springs.push(Spring {
+                        particle_index_0: index,
+                        particle_index_1: index1,
+                        stiffness: self.structural_spring_stiffness,
+                        rest_length: rest_length(index, index1),
+                    });
+                }
+                if j + 1 < resolution {
+                    let index1 = i * resolution + j + 1;
+                    springs.push(Spring {
+                        particle_index_0: index,
+                        particle_index_1: index1,
+                        stiffness: self.structural_spring_stiffness,
+                        rest_length: rest_length(index, index1),
+                    });
+                }
+            }
+        }
+
+        //generate shear springs
+        for i in 0..resolution {
+            for j in 0..resolution {
+                let index = i * resolution + j;
+                if i + 1 < resolution && j + 1 < resolution {
+                    let index1 = (i + 1) * resolution + j + 1;
+                    springs.push(Spring {
+                        particle_index_0: index,
+                        particle_index_1: index1,
+                        stiffness: self.shear_spring_stiffness,
+                        rest_length: rest_length(index, index1),
+                    });
+                }
+                if i + 1 < resolution && j > 0 {
+                    let index1 = (i + 1) * resolution + j - 1;
+                    springs.push(Spring {
+                        particle_index_0: index,
+                        particle_index_1: index1,
+                        stiffness: self.shear_spring_stiffness,
+                        rest_length: rest_length(index, index1),
+                    });
+                }
+            }
+        }
+        Cloth {
+            particle_masses: vec![particle_mass; num_vertices],
+            particle_positions: DVector::from_vec(vertices.clone()),
+            prev_particle_positions: DVector::from_vec(vertices),
+            springs,
+            attachments: vec![],
+        }
+    }
+
+    pub fn down_left_vertex_index(&self) -> usize {
+        0
+    }
+
+    pub fn top_left_vertex_index(&self) -> usize {
+        self.resolution - 1
+    }
+
+    pub fn down_right_vertex_index(&self) -> usize {
+        self.resolution * (self.resolution - 1)
+    }
+
+    pub fn top_right_vertex_index(&self) -> usize {
+        self.resolution * self.resolution - 1
     }
 }

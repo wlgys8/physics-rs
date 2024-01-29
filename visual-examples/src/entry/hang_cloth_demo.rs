@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use fast_mass_spring::{
-    cloth::{Attachment, Cloth, ClothFromMeshBuilder},
+    cloth::{Attachment, Cloth, ClothBuilder},
     solver::FastMassSpringSolver,
 };
 use simulation::{math::Isometry3, FixedFrames, GridPlaneBuilder};
@@ -11,8 +11,8 @@ use three_d::{
 };
 
 use crate::{
-    common::{ClothOptions, Demo, DemoLoopResult, PhysicsOptions},
-    gui::ClothOptionsGUI,
+    common::{ClothOptions, Demo, DemoLoopResult, SolverOptions},
+    gui::{ClothOptionsGUI, SolverOptionsGUI},
     render::ClothRender,
 };
 
@@ -23,20 +23,17 @@ pub struct HangClothScene {
 }
 
 impl HangClothScene {
-    fn new(
-        context: &three_d::Context,
-        physics_options: PhysicsOptions,
-        scene_options: SceneOptions,
-    ) -> Self {
+    fn new(context: &three_d::Context, scene_options: SceneOptions) -> Self {
+        let solver_options = scene_options.solver_options;
         let mut render = ClothRender::new(context);
         let (cloth, mesh) = create_cloth(scene_options);
         render.set_indices(mesh.indices());
         render.set_vertices_from_slice(cloth.particle_positions.as_slice());
 
-        let time_step = physics_options.time_step;
+        let time_step = solver_options.time_step;
         let mut solver: FastMassSpringSolver = FastMassSpringSolver::new(cloth, time_step);
-        solver.set_num_iterations(physics_options.num_iterations);
-        solver.set_gravity(physics_options.gravity);
+        solver.set_num_iterations(solver_options.num_iterations);
+        solver.set_gravity(solver_options.gravity);
 
         let fixed_frame_generator = FixedFrames::new(time_step);
 
@@ -90,12 +87,8 @@ impl Demo for HangClothDemo {
         "HangCloth"
     }
 
-    fn restart(&mut self, context: &three_d::Context, physics_options: PhysicsOptions) {
-        self.scene = Some(HangClothScene::new(
-            context,
-            physics_options,
-            self.scene_options,
-        ));
+    fn restart(&mut self, context: &three_d::Context) {
+        self.scene = Some(HangClothScene::new(context, self.scene_options));
     }
 
     fn on_frame_loop(&mut self, camera: &Camera, frame_input: &FrameInput) -> DemoLoopResult {
@@ -107,6 +100,7 @@ impl Demo for HangClothDemo {
     }
 
     fn show_options_gui(&mut self, ui: &mut three_d::egui::Ui) {
+        SolverOptionsGUI::new(&mut self.scene_options.solver_options).show_ui(ui);
         ClothOptionsGUI::new(&mut self.scene_options.cloth_options).show_ui(ui);
         Slider::new(&mut self.scene_options.attachment_stiffness, 0.1..=100.0)
             .text("Attachment Stiffness")
@@ -119,24 +113,27 @@ impl Demo for HangClothDemo {
 fn create_cloth(options: SceneOptions) -> (Cloth, simulation::Mesh) {
     let cloth_options = options.cloth_options;
     let resolution = cloth_options.resolution;
-    let grid_builder = GridPlaneBuilder::new(3.0, 3.0, resolution, resolution)
-        .with_transform(Isometry3::translation(1.0, 0.0, 0.0));
+    let cloth_size = 3.0;
+    let transform = Isometry3::translation(0.0, 0.0, 0.0);
 
-    let top_left = grid_builder.top_left_vertex_index();
-    let top_right = grid_builder.top_right_vertex_index();
-    let mesh = grid_builder.build();
-
-    let mut cloth = ClothFromMeshBuilder {
-        mesh: &mesh,
+    let physics_cloth_builder: ClothBuilder = ClothBuilder {
+        size: cloth_size,
+        resolution,
+        structural_spring_stiffness: cloth_options.structual_spring_stiffness,
+        shear_spring_stiffness: cloth_options.shear_spring_stiffness,
         mass: cloth_options.mass,
-        spring_stiffness: cloth_options.spring_stiffness,
-    }
-    .build();
+        transform,
+    };
+
+    let top_left = physics_cloth_builder.top_left_vertex_index();
+    let top_right = physics_cloth_builder.top_right_vertex_index();
+
+    let mut cloth = physics_cloth_builder.build();
 
     if options.fix_left_top {
         cloth.add_attachments([Attachment {
             particle_index: top_left,
-            target_position: mesh.vertices()[top_left],
+            target_position: cloth.get_particle_position(top_left),
             stiffness: options.attachment_stiffness,
         }]);
     }
@@ -144,15 +141,21 @@ fn create_cloth(options: SceneOptions) -> (Cloth, simulation::Mesh) {
     if options.fix_right_top {
         cloth.add_attachments([Attachment {
             particle_index: top_right,
-            target_position: mesh.vertices()[top_right],
+            target_position: cloth.get_particle_position(top_right),
             stiffness: options.attachment_stiffness,
         }]);
     }
-    (cloth, mesh)
+
+    let render_mesh_data =
+        GridPlaneBuilder::new(cloth_size, cloth_size, resolution - 1, resolution - 1)
+            .with_transform(transform)
+            .build();
+    (cloth, render_mesh_data)
 }
 
 #[derive(Clone, Copy)]
 struct SceneOptions {
+    solver_options: SolverOptions,
     cloth_options: ClothOptions,
     fix_left_top: bool,
     fix_right_top: bool,
@@ -162,7 +165,12 @@ struct SceneOptions {
 impl Default for SceneOptions {
     fn default() -> Self {
         Self {
-            cloth_options: Default::default(),
+            solver_options: SolverOptions::default(),
+            cloth_options: ClothOptions {
+                structual_spring_stiffness: 100.0,
+                shear_spring_stiffness: 0.2,
+                ..Default::default()
+            },
             fix_left_top: true,
             fix_right_top: true,
             attachment_stiffness: 50.0,
